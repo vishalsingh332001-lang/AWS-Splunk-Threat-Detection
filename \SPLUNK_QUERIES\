@@ -1,0 +1,52 @@
+🔍 Splunk SPL Detection Queries
+
+This document contains the core Search Processing Language (SPL) queries used in this lab to detect, investigate, and visualize the simulated brute-force attack and AWS anomalies.
+
+1. High-Velocity Brute Force Detection (Basic Alert)
+
+Purpose: Detects an excessive number of failed SSH login attempts from a single source IP address within a short timeframe.
+Threshold: > 10 failures in 5 minutes.
+
+index=aws_ec2_logs sourcetype=linux_secure action=failure
+| bin _time span=5m
+| stats count by _time, src_ip, user
+| where count > 10
+| eval Threat_Level="High", Status="Brute Force Attempt Detected"
+| table _time, src_ip, user, count, Threat_Level, Status
+| sort - count
+
+
+2. Successful Compromise: Login Following Brute Force (Critical Alert)
+
+Purpose: Identifies if an attacker successfully guessed a password and logged in after generating multiple failed attempts. This is a critical incident response trigger.
+
+index=aws_ec2_logs sourcetype=linux_secure (action=failure OR action=success)
+| transaction src_ip maxspan=10m
+| search action=failure AND action=success
+| stats count(eval(action="failure")) as Failed_Attempts, count(eval(action="success")) as Successful_Logins by src_ip, user, _time
+| where Failed_Attempts > 5 AND Successful_Logins > 0
+| eval Alert="CRITICAL: Successful Authentication Post-Brute Force"
+| table _time, src_ip, user, Failed_Attempts, Successful_Logins, Alert
+
+
+3. Threat Intelligence & Geo-Location Mapping (Dashboard Visualization)
+
+Purpose: Extracts the IP addresses of failed logins and maps them geographically. This query is designed to be used with Splunk's Choropleth Map visualization on a SOC dashboard.
+
+index=aws_ec2_logs sourcetype=linux_secure action=failure
+| iplocation src_ip
+| stats count by Country, City, src_ip
+| where Country != "United States" 
+| sort - count
+| geostats count by Country
+
+
+4. AWS CloudTrail: Suspicious IAM Activity (Lateral Movement/Persistence)
+
+Purpose: Monitors AWS CloudTrail logs to detect if the compromised EC2 instance (or the attacker) attempts to create new IAM users or attach administrative policies, indicating a persistence mechanism.
+
+index=aws_cloudtrail sourcetype=aws:cloudtrail (eventName=CreateUser OR eventName=AttachUserPolicy OR eventName=AttachGroupPolicy)
+| stats count by _time, eventName, requestParameters.userName, sourceIPAddress, userAgent
+| rename requestParameters.userName as Target_User, sourceIPAddress as Source_IP
+| eval Mitigation="Review IAM permissions immediately and revoke unauthorized access"
+| table _time, eventName, Target_User, Source_IP, userAgent, Mitigation
