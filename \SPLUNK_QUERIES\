@@ -1,4 +1,4 @@
-🔍 Splunk SPL Detection Queries
+ Splunk SPL Detection Queries
 
 This document contains the core Search Processing Language (SPL) queries used in this lab to detect, investigate, and visualize the simulated brute-force attack and AWS anomalies.
 
